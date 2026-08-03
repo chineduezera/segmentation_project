@@ -1,15 +1,11 @@
-import torch 
-import numpy as np
+import pandas as pd
+from pathlib import Path
+def split_df_on_fold(val_fold_no: int, fold_df: pd.DataFrame, train_csv_df: pd.DataFrame, train_img_pth: Path):
+    #Get all folds based on val_fold_no
+    val_idx = fold_df.loc[fold_df["Folds"] == val_fold_no]
+    image_id = val_idx.ImageId.tolist() #Image Id in list
 
-def get_mean_std(Dataloader):
-    channels_sum, channels_squared_sum, num_batches = 0, 0, 0
-
-    for data, _ in Dataloader:
-        channels_sum += torch.mean(data, dim= [0, 2, 3])
-        channels_squared_sum += torch.mean(data ** 2, dim = [0, 2, 3])
-        num_batches += 1
-
-    mean = channels_sum/ num_batches
-    std = np.sqrt(channels_squared_sum/num_batches - mean ** 2)
-
-    return mean, std
+    for id in image_id:
+        if id in train_csv_df["ClassId"]:
+            val = train_csv_df.loc[id, :]
+             
