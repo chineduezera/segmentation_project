@@ -8,6 +8,7 @@ import csv
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from .utils import split_df_on_fold
 
 load_dotenv()
 data_pth = Path(os.getenv("DATA_PATH", "data"))
@@ -40,7 +41,7 @@ for obj in train_file_name:
         grouped_clean_label.append((obj, "Clean"))
 
 #Create Function
-headers = ["ImageId", "Class"]
+headers = ["ImageId", "ClassId"]
 file_pth = Path(os.getenv("CURRENT_FILE_PATH", ""))
 with open("train_folds.csv", mode="w", newline="", encoding="utf-8") as file:
     writer = csv.writer(file)
