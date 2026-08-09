@@ -19,7 +19,7 @@ class RepeatedConv(nn.Module):
 class Unet(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.rc = RepeatedConv(in_channels= 3, out_channels=64)
+        self.rc = RepeatedConv(in_channels= in_channels, out_channels=64)
         # Contracting Path
         self.maxpool = nn.MaxPool2d(kernel_size=2, stride= 2)
         self.down1 = nn.Sequential(self.maxpool, RepeatedConv(in_channels= 64, out_channels= 128))
@@ -43,7 +43,7 @@ class Unet(nn.Module):
         self.up4 = nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=2)
         self.rc4 = RepeatedConv(in_channels= 128, out_channels=64)
 
-        self.final_layer = nn.Conv2d(in_channels= 64, out_channels= 1, kernel_size= 1)
+        self.final_layer = nn.Conv2d(in_channels= 64, out_channels= out_channels, kernel_size= 1)
 
     def forward(self, x):
         out = self.rc(x)
