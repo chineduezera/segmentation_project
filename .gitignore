@@ -2,3 +2,4 @@
 data
 .env
 structure.txt
+__pycache__

@@ -37,3 +37,6 @@ class BCEDiceLoss(nn.Module):
 
         # 3. Combine the losses
         return (self.bce_weight * bce_loss) + (self.dice_weight * dice_loss)
+
+
+

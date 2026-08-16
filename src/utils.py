@@ -1,4 +1,5 @@
 import pandas as pd
+import torch
 
 def get_validation_subset_for_fold(
     val_fold_no: int,
@@ -30,3 +31,42 @@ def get_validation_subset_for_fold(
     train_df = concat_train_csv.loc[concat_train_csv["Fold"] == val_fold_no]
     val_df = concat_train_csv.loc[concat_train_csv["Fold"] != val_fold_no]
     return train_df, val_df
+
+
+def dice_coefficient(pred, target, threshold=0.5, eps=1e-7):
+    pred = (torch.sigmoid(pred) > threshold).float()
+    intersection = (pred * target).sum(dim=(2, 3))
+    union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
+    dice = (2 * intersection + eps) / (union + eps)
+    return dice  # shape: (batch, num_classes)
+
+
+def calculate_slice_bboxes(
+    image_height: int,
+    image_width: int,
+    slice_height: int = 512,
+    slice_width: int = 512,
+    overlap_height_ratio: float = 0,
+    overlap_width_ratio: float = 0,
+):
+    slice_bboxes = []
+    y_max = y_min = 0
+    y_overlap = int(overlap_height_ratio * slice_height)
+    x_overlap = int(overlap_width_ratio * slice_width)
+    while y_max < image_height:
+        x_min = x_max = 0
+        y_max = y_min + slice_height
+        while x_max < image_width:
+            x_max = x_min + slice_width
+            if y_max > image_height or x_max > image_width:
+                xmax = min(image_width, x_max)
+                ymax = min(image_height, y_max)
+                xmin = max(0, xmax - slice_width)
+                ymin = max(0, ymax - slice_height)
+                slice_bboxes.append([xmin, ymin, xmax, ymax])
+            else:
+                slice_bboxes.append([x_min, y_min, x_max, y_max])
+            x_min = x_max - x_overlap
+        y_min = y_max - y_overlap
+    return slice_bboxes
+

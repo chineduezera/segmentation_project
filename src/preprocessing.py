@@ -1,14 +1,11 @@
 # Perform dataloading
 # StratifiedKFold
-from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold
-from .dataset import SteelDataset
 import pandas as pd
 import csv
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from .utils import split_df_on_fold
 
 load_dotenv()
 data_pth = Path(os.getenv("DATA_PATH", "data"))
@@ -52,7 +49,7 @@ train_fold = pd.read_csv("train_folds.csv")
 train_fold["Fold"] = -1
 
 skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-for fold, (train_idx, val_idx) in enumerate(skf.split(train_fold, train_fold["Class"])):
+for fold, (train_idx, val_idx) in enumerate(skf.split(train_fold, train_fold["ClassId"])):
     train_fold.loc[val_idx, "Fold"] = fold
 
 train_fold.to_csv("train_folds.csv", index=False)
