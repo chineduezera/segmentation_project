@@ -10,13 +10,13 @@ from dataset import SteelDataset
 from torch.utils.data import DataLoader
 import torch
 from model import Unet
-from torch.nn import Sigmoid
 from tqdm import trange
 from metrics import BCEDiceLoss
 from torch.optim import AdamW
 import albumentations as A
 import numpy as np
 from tqdm import tqdm
+
 
 def main():
     load_dotenv()
@@ -26,36 +26,12 @@ def main():
     train_csv = pd.read_csv(f"{data_path}/train.csv")
 
     train_df, val_df = get_validation_subset_for_fold(1, train_fold, train_csv)
-
+    print(f"Train size: {len(train_df["ImageId"])}, Val size: {len(val_df["ImageId"])}")
     train_transform = A.Compose(
         [
-            A.RandomCrop(height=256, width=800, p=1.0),  # or smaller patches
+            A.RandomCrop(height=256, width=256, p=1.0),
             A.HorizontalFlip(p=0.5),
-            A.VerticalFlip(p=0.5),  # steel images have no fixed "up" — safe here
-            A.RandomRotate90(p=0.3),
-            A.OneOf(
-                [
-                    A.RandomBrightnessContrast(
-                        brightness_limit=0.2, contrast_limit=0.2
-                    ),
-                    A.RandomGamma(),
-                ],
-                p=0.5,
-            ),
-            A.OneOf(
-                [
-                    A.GaussNoise(),
-                    A.GaussianBlur(blur_limit=3),
-                ],
-                p=0.3,
-            ),
-            A.ShiftScaleRotate(
-                shift_limit=0.05, scale_limit=0.1, rotate_limit=10, p=0.4
-            ),
-            A.CoarseDropout(
-                max_holes=4, max_height=20, max_width=20, p=0.3
-            ),  # cutout, forces robustness
-            A.Normalize(),
+            A.VerticalFlip(p=0.5),
         ]
     )
 
@@ -64,9 +40,9 @@ def main():
     )
     val_dataset = SteelDataset(df=val_df, img_dir=f"{data_path}/train_images")
 
-    BATCH_SIZE = 32
-    LR = 1e-4
-    EPOCH = 100
+    BATCH_SIZE = 4
+    LR = 1e-3
+    EPOCH = 20
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
     train_dataloader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
@@ -106,7 +82,7 @@ def main():
                 ypred.detach().cpu().numpy(), mask.detach().cpu().numpy()
             )
             total_train_loss += loss.item()
-            total_train_dice += dice_train
+            total_train_dice += dice_train.mean().item()
 
         model.eval()
         with torch.no_grad():
@@ -117,40 +93,37 @@ def main():
                 images, masks = image_batch.to(DEVICE), mask_batch.to(DEVICE)
                 B, C, H, W = images.shape
 
-                for b in range(B):
-                    image = images[b]
-                    mask = masks[b]
+                for img in range(B): # This loop is to slice each image in the batch, segment it and merge it back to a full image
+                    image = images[img]
+                    mask = masks[img]
                     slices = calculate_slice_bboxes(
-                        image.shape[0],
-                        image.shape[1],
-                        slice_h,
-                        slice_w,
-                        overlap_ratio_h,
-                        overlap_ratio_w,
+                        image_height=H,
+                        image_width=W,
+                        slice_height=slice_h,
+                        slice_width=slice_w,
+                        overlap_height_ratio=overlap_ratio_h,
+                        overlap_width_ratio=overlap_ratio_w,
                     )
 
-                    final_mask = np.zeros(
-                        (image.shape[0], image.shape[1], 4), dtype=np.uint8
-                    )
+                    final_mask = torch.zeros((4, H, W), dtype=torch.float32, device=DEVICE)
                     for x1, y1, x2, y2 in slices:
                         # crop slice from original image
-                        window = image[y1:y2, x1:x2]
+                        window = image[:, y1:y2, x1:x2]
 
                         # get segmentation mask for slice
-                        y_pred = model(window.unsqueeze(0))
+                        y_pred = model(window.unsqueeze(0)).squeeze(0)
 
                         # merge slice result to final mask
-                        final_mask[y1:y2, x1:x2] = (
-                            y_pred.squeeze(0).detach().cpu().numpy()
-                        )
+                        final_mask[:, y1:y2, x1:x2] = y_pred
 
-                final_mask = torch.as_tensor(final_mask, dtype=torch.float32).to(DEVICE)
-                loss = criterion(final_mask, mask)  # Note: mask (singular), not masks
-                total_val_loss += loss.item()
-                dice_val = dice_coefficient(
-                    final_mask.detach().cpu().numpy(), mask.detach().cpu().numpy()
-                )
-                total_val_dice += dice_val
+                    loss = criterion(final_mask.unsqueeze(0), mask.unsqueeze(0))
+                    total_val_loss += loss.item()
+
+                    dice_val = dice_coefficient(
+                        final_mask.unsqueeze(0).cpu().numpy(),
+                        mask.unsqueeze(0).cpu().numpy(),
+                    )
+                    total_val_dice += dice_val.mean().item()
 
         num_train_batches = len(train_dataloader)
         num_val_images = len(val_dataset)
@@ -165,11 +138,11 @@ def main():
         val_loss.append(avg_val_loss)
         val_dice.append(avg_val_dice)
 
-        print(
-    f"epoch {epoch+1}\n"
-    f"      train loss: {train_loss[-1]:.4f}, val loss: {val_loss[-1]:.4f}\n"
-    f"      train dice: {train_dice[-1]:.4f}, val dice: {val_dice[-1]:.4f}"
-)
+        # print(
+        #     f"epoch {epoch+1}\n"
+        #     f"      train loss: {train_loss[-1]:.4f}, val loss: {val_loss[-1]:.4f}\n"
+        #     f"      train dice: {train_dice[-1]:.4f}, val dice: {val_dice[-1]:.4f}"
+        # )
 
 
 if __name__ == "__main__":

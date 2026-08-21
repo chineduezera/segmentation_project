@@ -1,10 +1,10 @@
 # pyrefly: ignore [missing-import]
 from torch.utils.data import Dataset
 import pandas as pd
-import supervision
 import numpy as np
 import cv2
 import torch
+from utils import kaggle_rle_to_mask
 
 class SteelDataset(Dataset):
     def __init__(self, df:pd.DataFrame, img_dir, transforms = None,):
@@ -29,12 +29,16 @@ class SteelDataset(Dataset):
         rows = self.df[self.df["ImageId"] == img_id]
 
         for _, row in rows.iterrows():
+            class_value = str(row["ClassId"]).strip()
+            if class_value.lower() == "clean":
+                continue
+
             class_id = int(row["ClassId"]) - 1
             rle = row['EncodedPixels']
-            mask[:, :, class_id] = supervision.rle_to_mask(rle, (1600, 256))
+            mask[:, :, class_id] = kaggle_rle_to_mask(rle, 256, 1600)
 
-        if self.transform:
-            augmented = self.transform(image=image, mask=mask)
+        if self.transforms:
+            augmented = self.transforms(image=image, mask=mask)
             image = augmented["image"]
             mask = augmented["mask"]
 

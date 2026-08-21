@@ -1,5 +1,6 @@
 import pandas as pd
 import torch
+import numpy as np
 
 def get_validation_subset_for_fold(
     val_fold_no: int,
@@ -10,8 +11,8 @@ def get_validation_subset_for_fold(
     Splits a dataset into training and validation subsets based on a specified fold number.
 
     This function combines the clean data from the training fold with the training CSV data, merges them on 'ImageId', and then splits the resulting DataFrame into:
-    - `train_df`: Data points where the 'Fold' column equals the specified fold number.
-    - `val_df`: All other data points (i.e., data points where 'Fold' does not equal the specified fold number).
+    - `train_df`: All other data points (i.e., data points where 'Fold' does not equal the specified fold number).
+    - `val_df`: Data points where the 'Fold' column equals the specified fold number.
 
     Parameters:
     - val_fold_no (int): The fold number to use as the validation set.
@@ -27,13 +28,15 @@ def get_validation_subset_for_fold(
 
     clean = train_fold[["ImageId", "ClassId"]].loc[train_fold["ClassId"] == "Clean"]
     concat_train_csv = pd.concat([train_csv, clean], ignore_index=True)
-    concat_train_csv = concat_train_csv.merge(train_fold, how="inner", on="ImageId")
-    train_df = concat_train_csv.loc[concat_train_csv["Fold"] == val_fold_no]
-    val_df = concat_train_csv.loc[concat_train_csv["Fold"] != val_fold_no]
+    concat_train_csv = concat_train_csv.merge(train_fold[["ImageId", "Fold"]], how="inner", on="ImageId")
+    train_df = concat_train_csv.loc[concat_train_csv["Fold"] != val_fold_no]
+    val_df = concat_train_csv.loc[concat_train_csv["Fold"] == val_fold_no]
     return train_df, val_df
 
 
 def dice_coefficient(pred, target, threshold=0.5, eps=1e-7):
+    pred = torch.from_numpy(pred)
+    target = torch.from_numpy(target)
     pred = (torch.sigmoid(pred) > threshold).float()
     intersection = (pred * target).sum(dim=(2, 3))
     union = pred.sum(dim=(2, 3)) + target.sum(dim=(2, 3))
@@ -70,3 +73,28 @@ def calculate_slice_bboxes(
         y_min = y_max - y_overlap
     return slice_bboxes
 
+
+def kaggle_rle_to_mask(rle, height=256, width=1600):
+    if rle is None or (isinstance(rle, float) and np.isnan(rle)):
+        return np.zeros((height, width), dtype=np.float32)
+
+    rle = str(rle).strip()
+    if rle == "":
+        return np.zeros((height, width), dtype=np.float32)
+
+    vals = np.array([int(v) for v in rle.split()], dtype=np.int32)
+    if len(vals) % 2 != 0:
+        raise ValueError(f"Malformed RLE for mask: {rle}")
+
+    mask = np.zeros(height * width, dtype=np.float32)
+    starts = vals[0::2]
+    lengths = vals[1::2]
+
+    for start, length in zip(starts, lengths):
+        if length == 0:
+            continue
+        end = start + length
+        if 0 <= start < len(mask) and end <= len(mask):
+            mask[start:end] = 1.0
+
+    return mask.reshape((height, width))
